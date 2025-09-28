@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infographic: การทดลองคราบน้ำมันในน้ำ</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configuration for Inter font and custom colors -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-blue': '#1e40af', // Darker Blue for main theme
+                        'secondary-yellow': '#facc15', // Yellow for highlights
+                        'background-light': '#f3f4f6', // Light gray background
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+        
+        // --- Gemini API Logic ---
+        const apiKey = ""; // If you want to use models other than gemini-2.5-flash-preview-05-20, provide an API key here.
+
+        // Define the base API URL
+        let apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent';
+
+        // Append API key only if it is explicitly provided. If empty, the Canvas environment will handle authentication.
+        if (apiKey) {
+            apiUrl += `?key=${apiKey}`;
+        }
+
+        // Function to make the API call with exponential backoff
+        async function callGeminiAPI(userQuery, systemPrompt, useSearchGrounding = true) {
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            if (useSearchGrounding) {
+                payload.tools = [{ "google_search": {} }];
+            }
+            
+            let response;
+            const MAX_RETRIES = 3;
+            let delay = 1000;
+
+            for (let i = 0; i < MAX_RETRIES; i++) {
+                try {
+                    response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.status !== 429) { // 429 is Too Many Requests (Rate limit)
+                        break;
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2; 
+
+                } catch (error) {
+                    console.error("Fetch error, retrying...");
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+            
+            if (!response || !response.ok) {
+                throw new Error(`Gemini API failed with status: ${response ? response.status : 'No response'}`);
+            }
+
+            const result = await response.json();
+            const candidate = result.candidates?.[0];
+
+            if (candidate && candidate.content?.parts?.[0]?.text) {
+                const text = candidate.content.parts[0].text;
+                
+                let sources = [];
+                const groundingMetadata = candidate.groundingMetadata;
+                if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                    sources = groundingMetadata.groundingAttributions
+                        .map(attribution => ({
+                            uri: attribution.web?.uri,
+                            title: attribution.web?.title,
+                        }))
+                        .filter(source => source.uri && source.title);
+                }
+
+                return { text, sources };
+            } else {
+                throw new Error("Invalid response structure from Gemini API.");
+            }
+        }
+
+        async function fetchExplanation() {
+            const outputDiv = document.getElementById('gemini-output');
+            const loadingMessage = document.getElementById('loading-message');
+            
+            outputDiv.innerHTML = '';
+            loadingMessage.classList.remove('hidden');
+
+            // Thai system prompt for grounded science explanation
+            const systemPrompt = "คุณคือผู้ช่วยสอนด้านวิทยาศาสตร์ที่เชี่ยวชาญด้านเคมีและสิ่งแวดล้อม จงอธิบายหลักการทางวิทยาศาสตร์อย่างกระชับและชัดเจนเพื่อตอบคำถามเป็นภาษาไทย: 'ทำไมถึงเกิดคราบน้ำมันบนน้ำ (หลักการความหนาแน่น) และวิธีการใดในชีวิตประจำวันที่ใช้ตัก/ซับ/กรองถึงมีประสิทธิภาพสูงสุดในการกำจัดน้ำมันออกจากน้ำ (หลักการการดูดซับ/แรงตึงผิว)?' และจงอ้างอิงแหล่งที่มาของข้อมูล";
+            const userQuery = "อธิบายหลักการวิทยาศาสตร์เบื้องหลังการแยกน้ำมันออกจากน้ำ (Oil-Water Separation) โดยใช้การตัก, การซับ, และการกรอง";
+
+            try {
+                const result = await callGeminiAPI(userQuery, systemPrompt, true);
+                
+                // Format the text output (replace newlines with <br>)
+                let formattedText = result.text.replace(/\n/g, '<br>');
+                
+                let sourcesHtml = '';
+                if (result.sources && result.sources.length > 0) {
+                    const uniqueSources = Array.from(new Set(result.sources.map(s => s.uri)))
+                        .map(uri => result.sources.find(s => s.uri === uri));
+
+                    sourcesHtml = '<div class="mt-4 pt-3 border-t border-white/50">';
+                    sourcesHtml += '<p class="font-bold text-secondary-yellow mb-2">อ้างอิงจาก Google Search:</p>';
+                    sourcesHtml += '<ul class="list-disc list-inside text-sm space-y-1">';
+                    uniqueSources.forEach(source => {
+                        sourcesHtml += `<li><a href="${source.uri}" target="_blank" class="underline hover:text-secondary-yellow">${source.title || source.uri}</a></li>`;
+                    });
+                    sourcesHtml += '</ul></div>';
+                }
+                
+                outputDiv.innerHTML = `<div class="p-4 bg-white/10 rounded-lg mt-4 shadow-lg text-sm">${formattedText}${sourcesHtml}</div>`;
+
+            } catch (error) {
+                console.error("Error fetching Gemini explanation:", error);
+                outputDiv.innerHTML = '<div class="p-4 bg-red-800 rounded-lg mt-4 text-sm">ขออภัย เกิดข้อผิดพลาดในการดึงข้อมูลอธิบายทางวิทยาศาสตร์ กรุณาลองใหม่อีกครั้ง</div>';
+            } finally {
+                loadingMessage.classList.add('hidden');
+            }
+        }
+
+    </script>
+    <style>
+        /* Custom styles for infographic look and feel */
+        body {
+            background-color: #f3f4f6;
+            font-family: 'Inter', sans-serif;
+        }
+        .info-card {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease;
+        }
+        .info-card:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div class="max-w-4xl mx-auto bg-white rounded-3xl info-card p-6 md:p-10 lg:p-12 border-4 border-primary-blue/20">
+
+        <!-- Header Section -->
+        <header class="text-center mb-10">
+            <h1 class="text-4xl sm:text-5xl font-extrabold text-primary-blue leading-tight mb-2">
+                <span class="text-secondary-yellow">💧</span> Direction Lab – คราบน้ำมันในน้ำ <span class="text-secondary-yellow">🧪</span>
+            </h1>
+            <h2 class="text-xl sm:text-2xl font-semibold text-gray-700 mt-4">
+                การทดลองที่ 1: กำจัดมลพิษจากน้ำมันเบื้องต้น
+            </h2>
+            <p class="text-base text-gray-500 mt-1">
+                เรียนรู้การจัดการปัญหาคราบน้ำมันแบบง่าย ๆ!
+            </p>
+        </header>
+
+        <!-- Objectives Section -->
+        <div class="mb-10 p-5 bg-primary-blue/10 rounded-xl">
+            <h3 class="text-2xl font-bold mb-4 text-primary-blue border-b-2 border-primary-blue/50 pb-2 flex items-center">
+                <span class="text-secondary-yellow text-3xl mr-2">🎯</span> วัตถุประสงค์ (Goals)
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="flex items-start bg-white p-4 rounded-lg">
+                    <span class="text-3xl mr-3">🔍</span>
+                    <p class="font-medium text-gray-800">สังเกต: การกระจายตัวและการปนเปื้อนของน้ำมันในน้ำ</p>
+                </div>
+                <div class="flex items-start bg-white p-4 rounded-lg">
+                    <span class="text-3xl mr-3">🛠️</span>
+                    <p class="font-medium text-gray-800">ทดลอง: ค้นหาวิธีขจัดคราบน้ำมันออกจากน้ำ</p>
+                </div>
+                <div class="flex items-start bg-white p-4 rounded-lg">
+                    <span class="text-3xl mr-3">📊</span>
+                    <p class="font-medium text-gray-800">เปรียบเทียบ: ประสิทธิภาพของวิธีการกำจัดที่แตกต่างกัน</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Materials Section -->
+        <div class="mb-10">
+            <h3 class="text-2xl font-bold mb-4 text-gray-700 border-b-2 border-gray-300 pb-2 flex items-center">
+                <span class="text-4xl mr-2">🎒</span> อุปกรณ์ที่ต้องมี (Tools & Materials)
+            </h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white rounded-lg shadow-inner">
+                    <thead class="bg-primary-blue text-white">
+                        <tr>
+                            <th class="py-3 px-4 text-left text-sm font-semibold uppercase rounded-tl-lg">ไอเทม</th>
+                            <th class="py-3 px-4 text-center text-sm font-semibold uppercase rounded-tr-lg w-1/4">จำนวน</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="border-b hover:bg-background-light">
+                            <td class="py-3 px-4">แก้วน้ำ</td>
+                            <td class="py-3 px-4 text-center">1 ใบ</td>
+                        </tr>
+                        <tr class="border-b hover:bg-background-light">
+                            <td class="py-3 px-4">น้ำมันพืช</td>
+                            <td class="py-3 px-4 text-center">5–10 หยด</td>
+                        </tr>
+                        <tr class="border-b hover:bg-background-light">
+                            <td class="py-3 px-4">ช้อน/ทัพพี</td>
+                            <td class="py-3 px-4 text-center">1 อัน</td>
+                        </tr>
+                        <tr class="border-b hover:bg-background-light">
+                            <td class="py-3 px-4">กระดาษซับ / กระดาษกรอง / ผ้าฝ้าย</td>
+                            <td class="py-3 px-4 text-center">อย่างใดอย่างหนึ่งหรือทั้งหมด</td>
+                        </tr>
+                        <tr class="border-b hover:bg-background-light">
+                            <td class="py-3 px-4">ถ้วยน้ำสำรอง (สำหรับน้ำทิ้ง)</td>
+                            <td class="py-3 px-4 text-center">1 ใบ</td>
+                        </tr>
+                        <tr class="border-b hover:bg-background-light">
+                            <td class="py-3 px-4">ผ้าชุบน้ำ (สำหรับทำความสะอาด)</td>
+                            <td class="py-3 px-4 text-center">1 ผืน</td>
+                        </tr>
+                        <tr class="hover:bg-background-light">
+                            <td class="py-3 px-4 rounded-bl-lg">ใบบันทึกผล</td>
+                            <td class="py-3 px-4 text-center rounded-br-lg">1 แผ่น</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Procedure Section -->
+        <div class="mb-10 p-6 bg-secondary-yellow/20 rounded-xl border border-secondary-yellow/50">
+            <h3 class="text-2xl font-bold mb-5 text-gray-700 border-b-2 border-secondary-yellow/80 pb-2 flex items-center">
+                <span class="text-3xl mr-2">📝</span> ขั้นตอนการทดลอง (The Procedure)
+            </h3>
+            <ol class="space-y-4 text-gray-800">
+                <!-- Step 1 -->
+                <li class="flex items-start">
+                    <span class="font-extrabold text-xl text-primary-blue mr-3 p-1 bg-white rounded-full h-8 w-8 flex items-center justify-center border-2 border-primary-blue">1</span>
+                    <div>
+                        <strong class="text-lg">เติมน้ำ:</strong> เติมน้ำใส่แก้วประมาณ ครึ่งแก้ว
+                    </div>
+                </li>
+                <!-- Step 2 -->
+                <li class="flex items-start">
+                    <span class="font-extrabold text-xl text-primary-blue mr-3 p-1 bg-white rounded-full h-8 w-8 flex items-center justify-center border-2 border-primary-blue">2</span>
+                    <div>
+                        <strong class="text-lg">หยดน้ำมัน:</strong> ค่อย ๆ หยดน้ำมันพืชลงในน้ำ 5–10 หยด
+                    </div>
+                </li>
+                <!-- Step 3 -->
+                <li class="flex items-start">
+                    <span class="font-extrabold text-xl text-primary-blue mr-3 p-1 bg-white rounded-full h-8 w-8 flex items-center justify-center border-2 border-primary-blue">3</span>
+                    <div>
+                        <strong class="text-lg">สังเกต:</strong> บันทึกผลการกระจายตัวของน้ำมันบนผิวน้ำ (น้ำมันลอยน้ำหรือไม่?)
+                    </div>
+                </li>
+                <!-- Step 4 - Methods -->
+                <li class="flex items-start flex-col">
+                    <div class="flex items-start mb-2">
+                         <span class="font-extrabold text-xl text-primary-blue mr-3 p-1 bg-white rounded-full h-8 w-8 flex items-center justify-center border-2 border-primary-blue">4</span>
+                        <strong class="text-lg">ทดลองกำจัด!</strong> ลองใช้วิธีต่อไปนี้เพื่อขจัดน้ำมันออก (ทีละวิธี):
+                    </div>
+                    <ul class="ml-14 space-y-2 w-full">
+                        <li class="p-3 bg-white rounded-lg shadow-sm">
+                            <span class="text-2xl mr-2">🥄</span> วิธีที่ 1: ช้อน/ทัพพี ตักน้ำมันออกจากผิวน้ำ
+                        </li>
+                        <li class="p-3 bg-white rounded-lg shadow-sm">
+                            <span class="text-2xl mr-2">📰</span> วิธีที่ 2: กระดาษซับ ใช้กระดาษซับซับน้ำมันออกจากผิวน้ำ
+                        </li>
+                        <li class="p-3 bg-white rounded-lg shadow-sm">
+                            <span class="text-2xl mr-2">🔬</span> วิธีที่ 3: วัสดุกรอง (กระดาษกรอง/ผ้าฝ้าย) ลองใช้เป็นตัวกรอง
+                        </li>
+                    </ul>
+                </li>
+                <!-- Step 5 -->
+                <li class="flex items-start">
+                    <span class="font-extrabold text-xl text-primary-blue mr-3 p-1 bg-white rounded-full h-8 w-8 flex items-center justify-center border-2 border-primary-blue">5</span>
+                    <div>
+                        <strong class="text-lg">บันทึก & เปรียบเทียบ:</strong> บันทึกผลลัพธ์ของ แต่ละวิธี
+                    </div>
+                </li>
+            </ol>
+        </div>
+
+        <!-- Analysis Section -->
+        <div class="p-6 bg-primary-blue rounded-xl text-white">
+            <h3 class="text-2xl font-bold mb-4 text-secondary-yellow border-b-2 border-secondary-yellow pb-2 flex items-center">
+                <span class="text-3xl mr-2">💡</span> วิเคราะห์ผล (Analyze Your Results)
+            </h3>
+            <ul class="space-y-3 list-disc list-inside">
+                <li class="font-medium">
+                    คำถามสำคัญที่ 1: วิธีใดที่สามารถ ขจัดน้ำมันออกจากน้ำได้ดีที่สุด?
+                </li>
+                <li class="font-medium">
+                    คำถามสำคัญที่ 2: เพราะเหตุใดวิธีการนั้นจึงมีประสิทธิภาพมากที่สุด? (อธิบายตามหลักการทางวิทยาศาสตร์เกี่ยวกับความหนาแน่นและการดูดซับ)
+                </li>
+            </ul>
+
+            <!-- New Gemini Feature -->
+            <button 
+                onclick="fetchExplanation()"
+                class="mt-6 w-full sm:w-auto px-6 py-3 bg-secondary-yellow text-primary-blue font-bold rounded-full hover:bg-yellow-300 transition duration-200 shadow-md transform hover:scale-[1.02]"
+            >
+                ✨ อธิบายหลักการทางวิทยาศาสตร์โดย Gemini ✨
+            </button>
+
+            <!-- Loading Message -->
+            <div id="loading-message" class="hidden mt-4 text-center">
+                <div class="animate-spin inline-block w-6 h-6 border-4 border-t-secondary-yellow border-white/50 rounded-full mr-2"></div>
+                กำลังสร้างคำอธิบายทางวิทยาศาสตร์...
+            </div>
+
+            <!-- Output Div -->
+            <div id="gemini-output">
+                <!-- LLM output will appear here -->
+            </div>
+            
+            <p class="mt-6 text-sm italic border-t border-white/50 pt-3 flex items-center">
+                <span class="text-secondary-yellow text-xl mr-2">⚠️</span> ข้อควรจำ: เมื่อทำการทดลองเสร็จแล้ว กรุณาทำความสะอาดอุปกรณ์และจัดการน้ำมันที่ใช้แล้วอย่างเหมาะสม
+            </p>
+        </div>
+
+    </div>
+
+</body>
+</html>
