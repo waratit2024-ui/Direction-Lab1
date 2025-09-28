@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Infographic: การทดลองคราบน้ำมันในน้ำ</title>
+    <!-- Google Font Link for Inter to ensure consistent rendering -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Configuration for Inter font and custom colors -->
@@ -17,6 +19,7 @@
                         'background-light': '#f3f4f6', // Light gray background
                     },
                     fontFamily: {
+                        // This config still points to 'Inter', but now the font is guaranteed to be loaded via the <link> tag
                         sans: ['Inter', 'sans-serif'],
                     },
                 }
@@ -74,6 +77,8 @@
             }
             
             if (!response || !response.ok) {
+                // Log the status here to help diagnose future API issues if any
+                console.error("Error fetching Gemini explanation: Status", response ? response.status : 'No response');
                 throw new Error(`Gemini API failed with status: ${response ? response.status : 'No response'}`);
             }
 
@@ -310,8 +315,6 @@
                     คำถามสำคัญที่ 2: เพราะเหตุใดวิธีการนั้นจึงมีประสิทธิภาพมากที่สุด? (อธิบายตามหลักการทางวิทยาศาสตร์เกี่ยวกับความหนาแน่นและการดูดซับ)
                 </li>
             </ul>
-
-
 
             <!-- Loading Message -->
             <div id="loading-message" class="hidden mt-4 text-center">
