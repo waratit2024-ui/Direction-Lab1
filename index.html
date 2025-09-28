@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Infographic: การทดลองคราบน้ำมันในน้ำ</title>
-    <!-- Google Font Link for Inter to ensure consistent rendering -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <!-- Google Font Link changed to IBM Plex Sans Thai for better Thai rendering -->
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700;900&display=swap" rel="stylesheet">
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Configuration for Inter font and custom colors -->
+    <!-- Configuration for IBM Plex Sans Thai font and custom colors -->
     <script>
         tailwind.config = {
             theme: {
@@ -19,8 +19,8 @@
                         'background-light': '#f3f4f6', // Light gray background
                     },
                     fontFamily: {
-                        // This config still points to 'Inter', but now the font is guaranteed to be loaded via the <link> tag
-                        sans: ['Inter', 'sans-serif'],
+                        // Set IBM Plex Sans Thai as the default font
+                        sans: ['IBM Plex Sans Thai', 'sans-serif'],
                     },
                 }
             }
@@ -151,7 +151,8 @@
         /* Custom styles for infographic look and feel */
         body {
             background-color: #f3f4f6;
-            font-family: 'Inter', sans-serif;
+            /* Update custom style to use the new font family */
+            font-family: 'IBM Plex Sans Thai', sans-serif;
         }
         .info-card {
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
